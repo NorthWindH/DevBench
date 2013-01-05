@@ -3,9 +3,9 @@ DevBench
 
 A benchmark utility for human developers.
 
-Written by northWind/Hasan Kamal-Al-Deen [github.com/northWind87]
+Written by [northWind/Hasan Kamal-Al-Deen](github.com/northWind87)
 
-USAGE
+Usage
 =====
 
 python src/devbench.py
