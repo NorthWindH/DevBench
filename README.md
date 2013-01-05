@@ -1,9 +1,9 @@
 DevBench
 ========
 
-Written by northWind/Hasan Kamal-Al-Deen
+A benchmark utility for human developers.
 
-A tool for performance monitoring human developers.
+Written by northWind/Hasan Kamal-Al-Deen [github.com/northWind87]
 
 USAGE
 =====
@@ -11,5 +11,5 @@ USAGE
 python src/devbench.py
 Follow on-screen prompts :)
 
-Reporting is printed to <ROOT>/out/dev.profile. Use tail -f dev.profile in
-a separate console to monitor.
+Reporting is printed to working_directory/dev.profile.
+Use python src/recat.py dev.profile to monitor output.
