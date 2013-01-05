@@ -67,7 +67,7 @@ def main():
     print(
 '''\
 DevBench engaged, q quit exit or abort [any caps] to exit.
-Profiling is printed to %s, use tail -f dev.profile to monitor.
+Profiling is printed to %s, use python src/recat.py dev.profile to monitor.
 
 USAGE:
     Enter Process/Subprocess:
