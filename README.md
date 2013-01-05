@@ -3,7 +3,7 @@ DevBench
 
 A benchmark utility for human developers.
 
-Written by [northWind/Hasan Kamal-Al-Deen](github.com/northWind87)
+Written by [northWind/Hasan Kamal-Al-Deen](http://github.com/northWind87)
 
 Usage
 =====
