@@ -17,6 +17,41 @@ OUT_FILE_NAME = 'dev.profile'
 PRINT_DELAY_S = 0.25
 
 
+def time_str(time_s):
+    sec_i = int(time_s)
+
+    # More than 1 minute, count minutes
+    if sec_i >= 60:
+        min_i = sec_i / 60
+        sec_i -= min_i * 60
+        time_s -= min_i * 60
+
+        # More than an hour, count hours
+        if min_i >= 60:
+            hr_i = min_i / 60
+            min_i -= hr_i * 60
+
+            # More than 1 day, count days
+            if hr_i >= 24:
+                day_i = hr_i / 24
+                hr_i -= day_i * 24
+                return '%d days, %d hrs, %d mins, %.2f secs' % (
+                    day_i, hr_i, min_i, time_s
+                )
+
+            # Less than 1 day, print hr:min:sec
+            else:
+                return '%d hrs, %d mins, %.2f secs' % (hr_i, min_i, time_s)
+
+        # Less than an hour has passed, pring min:sec
+        else:
+            return '%d mins, %.2f secs' % (min_i, time_s)
+
+    # Less than 1 minute, simply print seconds
+    else:
+        return '%.2f secs' % time_s
+
+
 class Process(object):
     def __init__(self, name, parent):
         self.parent = parent
@@ -147,11 +182,11 @@ class DevBench(object):
         proc = self.root
         while proc:
             if not proc.ended():
-                format = '%s%s (Running... personal: %f, total: %f):\n'
+                format = '%s%s (Running... personal: %s, total: %s):\n'
             else:
-                format = '%s%s (Ended personal: %f, total: %f):\n'
+                format = '%s%s (Ended personal: %s, total: %s):\n'
             out.write(format % (
-                '  ' * depth, proc.name, proc.personal_time, proc.total_time
+                '  ' * depth, proc.name, time_str(proc.personal_time), time_str(proc.total_time)
             ))
 
             if proc.name not in avgs:
@@ -182,7 +217,7 @@ class DevBench(object):
                 else:
                     proc = None
 
-        # write out averages
+        # write out by process
         for k, v in avgs.items():
             num_procs = len(v)
             total_ptime = 0
@@ -190,20 +225,20 @@ class DevBench(object):
             for proc in v:
                 total_ptime += proc.personal_time
                 total_ttime += proc.total_time
-            avgs[k] = (total_ptime / num_procs, total_ttime / num_procs, num_procs)
+            avgs[k] = (total_ptime, total_ttime, total_ptime / num_procs, total_ttime / num_procs, num_procs)
 
         avgs = sorted(avgs.items())
 
-        out.write('\nProcess Averages By Name:\n')
+        out.write('\nProcesses By Name:\n')
         for itm in avgs:
-            out.write('%s: personal: %f, total: %f, occurrences: %d\n' % (
-                itm[0], itm[1][0], itm[1][1], itm[1][2]
-            ))
+            out.write('%s: tot_prs: %s, tot_tot: %s, avg_prs: %s, avg_tot: %s, occurrences: %d\n' %
+                ((itm[0], ) + tuple([time_str(n) for n in itm[1][:-1]]) + (itm[1][-1], ))
+            )
 
         cur_proc = self.running_process()
         if not cur_proc.ended():
-            out.write('\ncurrent: %s, time so far: %d' % (
-                self.running_path(), cur_proc.time_so_far()
+            out.write('\ncurrent: %s, time so far: %s' % (
+                self.running_path(), time_str(cur_proc.time_so_far())
             ))
         self.lock.release()
         return out.getvalue()
