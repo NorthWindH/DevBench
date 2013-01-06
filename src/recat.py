@@ -21,5 +21,5 @@ if __name__ == '__main__':
                 last_mt = new_mt
                 f = open(f_path)
                 for line in f.readlines():
-                    print(line)
+                    sys.stdout.write(line)
             time.sleep(1)
