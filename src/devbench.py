@@ -260,7 +260,7 @@ def main():
     print(
 '''\
 DevBench engaged, q quit exit or abort [any caps] to exit.
-Profiling is printed to %s, use python src/recat.py dev.profile to monitor.
+Profiling is printed to %s, use python src/recat.py %s to monitor.
 
 USAGE:
     Enter Process/Subprocess:
@@ -268,7 +268,7 @@ USAGE:
 
     Pop Out of Current Process:
         DevBench: <
-''' % out_file_name)
+''' % (out_file_name, out_file_name))
 
     bench = DevBench()
     printer = DevPrinter(bench, PRINT_DELAY_S, out_file_name)
