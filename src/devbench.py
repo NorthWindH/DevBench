@@ -5,6 +5,7 @@ A tool to measure the performance of developers and report, much like how
 programs are performance measured.
 """
 
+import sys
 import os.path
 import threading
 import time
@@ -235,10 +236,6 @@ class DevPrinter(threading.Thread):
 
     def run(self):
         while self.can_loop():
-            dir_name = os.path.dirname(os.path.abspath(self.out_file))
-            if not os.path.isdir(dir_name):
-                os.makedirs(dir_name)
-
             f = open(self.out_file, 'w')
             f.write('%s\n' % self.bench.report_str())
             f.close()
@@ -246,6 +243,20 @@ class DevPrinter(threading.Thread):
 
 
 def main():
+    out_file_name = OUT_FILE_NAME
+    if len(sys.argv) > 1:
+        out_file_name = sys.argv[1]
+        out_file_name_abs = os.path.abspath(out_file_name)
+        dir_name = os.path.dirname(out_file_name_abs)
+        if not os.path.isdir(dir_name):
+            os.makedirs(dir_name)
+
+    try:
+        f = open(out_file_name, 'w')
+    except:
+        raise RuntimeError('could not open %s for writing, exiting...' % out_file_name)
+
+    f.close()
     print(
 '''\
 DevBench engaged, q quit exit or abort [any caps] to exit.
@@ -257,10 +268,10 @@ USAGE:
 
     Pop Out of Current Process:
         DevBench: <
-''' % os.path.abspath(OUT_FILE_NAME))
+''' % out_file_name)
 
     bench = DevBench()
-    printer = DevPrinter(bench, PRINT_DELAY_S, OUT_FILE_NAME)
+    printer = DevPrinter(bench, PRINT_DELAY_S, out_file_name)
     printer.start()
     engaged = True
     while engaged:
