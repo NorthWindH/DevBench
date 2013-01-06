@@ -21,7 +21,7 @@ class Process(object):
         self.parent = parent
         self.children = list()
         self.begin_time = time.time()
-        self.name = name
+        self.name = name.lower()
         self.end_time = -1
         self.personal_time = 0
         self.total_time = 0
@@ -88,7 +88,7 @@ class Process(object):
 class DevBench(object):
     def __init__(self):
         self.lock = threading.Lock()
-        self.root = Process('Root', None)
+        self.root = Process('root', None)
 
     def done(self):
         return self.root.ended()
@@ -104,9 +104,24 @@ class DevBench(object):
         self.lock.release()
         return ended_process
 
+    def running_path(self):
+        self.lock.acquire()
+        out = StringIO.StringIO()
+        proc = self.root
+        while proc:
+            out.write(proc.name)
+            if len(proc.children) and not proc.children[-1].ended():
+                out.write('.')
+                proc = proc.children[-1]
+            else:
+                proc = None
+        self.lock.release()
+        return out.getvalue()
+
     def report_str(self):
         self.lock.acquire()
         out = StringIO.StringIO()
+        avgs = dict()
         depth = 0
         proc = self.root
         while proc:
@@ -117,6 +132,10 @@ class DevBench(object):
             out.write(format % (
                 '  ' * depth, proc.name, proc.personal_time, proc.total_time
             ))
+
+            if proc.name not in avgs:
+                avgs[proc.name] = list()
+            avgs[proc.name].append(proc)
 
             # Attempt to descend
             if len(proc.children):
@@ -141,6 +160,24 @@ class DevBench(object):
                 # No parent, done
                 else:
                     proc = None
+
+        # write out averages
+        for k, v in avgs.items():
+            num_procs = len(v)
+            total_ptime = 0
+            total_ttime = 0
+            for proc in v:
+                total_ptime += proc.personal_time
+                total_ttime += proc.total_time
+            avgs[k] = (total_ptime / num_procs, total_ttime / num_procs, num_procs)
+
+        avgs = sorted(avgs.items())
+
+        out.write('\nProcess Averages By Name:\n')
+        for itm in avgs:
+            out.write('%s: personal: %f, total: %f, occurrences: %d\n' % (
+                itm[0], itm[1][0], itm[1][1], itm[1][2]
+            ))
         self.lock.release()
         return out.getvalue()
 
@@ -190,7 +227,7 @@ Profiling is printed to %s, use python src/recat.py dev.profile to monitor.
 
 USAGE:
     Enter Process/Subprocess:
-        DevBench: >name_of_process
+        DevBench: name_of_process
 
     Pop Out of Current Process:
         DevBench: <
@@ -201,17 +238,16 @@ USAGE:
     printer.start()
     engaged = True
     while engaged:
-        cmd = raw_input('DevBench: ')
+        cmd = raw_input('DevBench (%s): ' % bench.running_path())
 
         # Handle command
         cmd = cmd.lower()
         if cmd in EXIT_WORDS:
             engaged = False
             print('exiting...')
-        elif cmd.startswith('>') and len(cmd) > 1:
-            name = cmd[1:]
-            print('entering process %s' % name)
-            bench.enter_process(name)
+        elif not cmd.startswith('<') and len(cmd) > 0:
+            print('entering process %s' % cmd)
+            bench.enter_process(cmd)
         elif cmd.startswith('<'):
             print('leaving process %s...' % bench.leave_process())
             if bench.root.ended():
