@@ -13,7 +13,7 @@ import StringIO
 
 EXIT_WORDS = ['q', 'quit', 'exit', 'abort']
 OUT_FILE_NAME = 'dev.profile'
-PRINT_DELAY_S = 2
+PRINT_DELAY_S = 0.25
 
 
 class Process(object):
@@ -32,12 +32,19 @@ class Process(object):
     def __repr__(self):
         return str(self)
 
-    def ended(self):
-        return self.end_time != -1
-
     def _add_time(self, t):
         self.personal_time += t
         self.total_time += t
+
+    def ended(self):
+        return self.end_time != -1
+
+    def time_so_far(self):
+        now = time.time()
+        if not self.ended():
+            return now - self.begin_time
+
+        raise RuntimeError('cannot be called on ended process')
 
     def begin(self, name):
         # Ensure we are not already ended
@@ -87,7 +94,7 @@ class Process(object):
 # required but screw it.
 class DevBench(object):
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.root = Process('root', None)
 
     def done(self):
@@ -103,6 +110,19 @@ class DevBench(object):
         ended_process = self.root.end()
         self.lock.release()
         return ended_process
+
+    def running_process(self):
+        self.lock.acquire()
+        proc = self.root
+        rv = proc
+        while proc:
+            if len(proc.children) and not proc.children[-1].ended():
+                proc = proc.children[-1]
+                rv = proc
+            else:
+                proc = None
+        self.lock.release()
+        return rv
 
     def running_path(self):
         self.lock.acquire()
@@ -177,6 +197,12 @@ class DevBench(object):
         for itm in avgs:
             out.write('%s: personal: %f, total: %f, occurrences: %d\n' % (
                 itm[0], itm[1][0], itm[1][1], itm[1][2]
+            ))
+
+        cur_proc = self.running_process()
+        if not cur_proc.ended():
+            out.write('\ncurrent: %s, time so far: %d' % (
+                self.running_path(), cur_proc.time_so_far()
             ))
         self.lock.release()
         return out.getvalue()
