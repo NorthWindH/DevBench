@@ -10,10 +10,11 @@ import os.path
 import threading
 import time
 import StringIO
+import json
 
 
 EXIT_WORDS = ['q', 'quit', 'exit', 'abort']
-OUT_FILE_NAME = 'dev.profile'
+DEFAULT_PROJECT = time.strftime('bench_%b_%d_%Y')
 PRINT_DELAY_S = 0.25
 
 
@@ -35,21 +36,23 @@ def time_str(time_s):
             if hr_i >= 24:
                 day_i = hr_i / 24
                 hr_i -= day_i * 24
-                return '%d days, %d hrs, %d mins, %.2f secs' % (
+                rv = '%d d, %d h, %d m, %.2f s' % (
                     day_i, hr_i, min_i, time_s
                 )
 
             # Less than 1 day, print hr:min:sec
             else:
-                return '%d hrs, %d mins, %.2f secs' % (hr_i, min_i, time_s)
+                rv = '%d h, %d m, %.2f s' % (hr_i, min_i, time_s)
 
         # Less than an hour has passed, pring min:sec
         else:
-            return '%d mins, %.2f secs' % (min_i, time_s)
+            rv = '%d m, %.2f s' % (min_i, time_s)
 
     # Less than 1 minute, simply print seconds
     else:
-        return '%.2f secs' % time_s
+        rv = '%.2f s' % time_s
+
+    return '[%s]' % rv
 
 
 class Process(object):
@@ -124,6 +127,36 @@ class Process(object):
 
             return ended_process
         return self.name
+
+    @staticmethod
+    def _json_object_hook(dct):
+        proc = Process('', None)
+        proc.name = dct['name']
+        proc.begin_time = dct['begin_time']
+        proc.end_time = dct['end_time']
+        proc.personal_time = dct['personal_time']
+        proc.total_time = dct['total_time']
+        proc.children = dct['children']
+        for child in proc.children:
+            child.parent = proc
+        if proc.name == 'root':
+            proc.end_time = -1
+            proc.parent = None
+        return proc
+
+
+class ProcessEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Process):
+            return {
+                'name': obj.name,
+                'begin_time': obj.begin_time,
+                'end_time': obj.end_time,
+                'personal_time': obj.personal_time,
+                'total_time': obj.total_time,
+                'children': [self.default(child) for child in obj.children]
+            }
+        return json.JSONEncoder.default(self, obj)
 
 
 # Writing only done in one thread, reading in another, synch not strictly
@@ -217,39 +250,52 @@ class DevBench(object):
                 else:
                     proc = None
 
-        # write out by process
-        for k, v in avgs.items():
-            num_procs = len(v)
-            total_ptime = 0
-            total_ttime = 0
-            for proc in v:
-                total_ptime += proc.personal_time
-                total_ttime += proc.total_time
-            avgs[k] = (total_ptime, total_ttime, total_ptime / num_procs, total_ttime / num_procs, num_procs)
-
-        avgs = sorted(avgs.items())
-
-        out.write('\nProcesses By Name:\n')
-        for itm in avgs:
-            out.write('%s: tot_prs: %s, tot_tot: %s, avg_prs: %s, avg_tot: %s, occurrences: %d\n' %
-                ((itm[0], ) + tuple([time_str(n) for n in itm[1][:-1]]) + (itm[1][-1], ))
-            )
-
+        # If not done, write running time
         cur_proc = self.running_process()
         if not cur_proc.ended():
             out.write('\ncurrent: %s, time so far: %s' % (
                 self.running_path(), time_str(cur_proc.time_so_far())
             ))
+
+        # Otherwise, write out time by process
+        else:
+            for k, v in avgs.items():
+                num_procs = len(v)
+                total_ptime = 0
+                total_ttime = 0
+                for proc in v:
+                    total_ptime += proc.personal_time
+                    total_ttime += proc.total_time
+                avgs[k] = (total_ptime, total_ttime, total_ptime / num_procs, total_ttime / num_procs, num_procs)
+
+            avgs = sorted(avgs.items())
+
+            out.write('\nProcesses By Name:\n')
+            for itm in avgs:
+                out.write('%s: tot_prs: %s, tot_tot: %s, avg_prs: %s, avg_tot: %s, occurrences: %d\n' %
+                    ((itm[0], ) + tuple([time_str(n) for n in itm[1][:-1]]) + (itm[1][-1], ))
+                )
         self.lock.release()
         return out.getvalue()
 
+    def loadf(self, file):
+        self.lock.acquire()
+        self.root = json.load(file, object_hook=Process._json_object_hook)
+        self.lock.release()
+
+    def savef(self, file):
+        self.lock.acquire()
+        json.dump(self.root, file, cls=ProcessEncoder, indent=2, separators=(',', ': '))
+        self.lock.release()
+
 
 class DevPrinter(threading.Thread):
-    def __init__(self, bench, delay, out_file):
+    def __init__(self, bench, delay, out_file_name, session_file_name):
         threading.Thread.__init__(self)
         self.bench = bench
         self.delay = delay
-        self.out_file = out_file
+        self.out_file_name = out_file_name
+        self.session_file_name = session_file_name
         self.engaged_lock = threading.Lock()
         self.engaged_count = -1
         self.daemon = True
@@ -271,31 +317,47 @@ class DevPrinter(threading.Thread):
 
     def run(self):
         while self.can_loop():
-            f = open(self.out_file, 'w')
+            f = open(self.out_file_name, 'w')
             f.write('%s\n' % self.bench.report_str())
+            f.close()
+            f = open(self.session_file_name, 'w')
+            self.bench.savef(f)
             f.close()
             time.sleep(self.delay)
 
 
 def main():
-    out_file_name = OUT_FILE_NAME
+    project = DEFAULT_PROJECT
+    out_file_name = os.path.join(project, 'out')
+    session_file_name = os.path.join(project, 'bench.json')
     if len(sys.argv) > 1:
-        out_file_name = sys.argv[1]
-        out_file_name_abs = os.path.abspath(out_file_name)
-        dir_name = os.path.dirname(out_file_name_abs)
-        if not os.path.isdir(dir_name):
-            os.makedirs(dir_name)
+        project = sys.argv[1]
+        out_file_name = os.path.join(project, 'out')
+        session_file_name = os.path.join(project, 'bench.json')
 
-    try:
-        f = open(out_file_name, 'w')
-    except:
-        raise RuntimeError('could not open %s for writing, exiting...' % out_file_name)
+    if not os.path.isdir(project):
+        try:
+            os.makedirs(project)
+        except:
+            raise RuntimeError('failed to create project directory %s' % project)
 
-    f.close()
+    def test_open(file_name, mode):
+        try:
+            existed = os.path.isfile(file_name)
+            if existed or 'r' not in mode:
+                f = open(file_name, mode)
+                f.close()
+                if not existed:
+                    os.remove(file_name)
+        except:
+            raise RuntimeError('could not open %s for writing, exiting...' % file_name)
+    test_open(out_file_name, 'r')
+    test_open(session_file_name, 'r')
+
     print(
 '''\
 DevBench engaged, q quit exit or abort [any caps] to exit.
-Profiling is printed to %s, use python src/recat.py %s to monitor.
+Profiling project %s. Printing to %s/out, use python src/recat.py %s/out to monitor.
 
 USAGE:
     Enter Process/Subprocess:
@@ -303,10 +365,20 @@ USAGE:
 
     Pop Out of Current Process:
         DevBench: <
-''' % (out_file_name, out_file_name))
+''' % (project, project, project))
 
     bench = DevBench()
-    printer = DevPrinter(bench, PRINT_DELAY_S, out_file_name)
+
+    # Can we continue session?
+    if os.path.isfile(session_file_name):
+        bench.loadf(open(session_file_name))
+
+    # Test write
+    test_open(out_file_name, 'w')
+    test_open(session_file_name, 'w')
+
+    # Engage printer
+    printer = DevPrinter(bench, PRINT_DELAY_S, out_file_name, session_file_name)
     printer.start()
     engaged = True
     while engaged:
