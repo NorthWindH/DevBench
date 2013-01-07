@@ -268,9 +268,9 @@ class DevBench(object):
                     total_ttime += proc.total_time
                 avgs[k] = (total_ptime, total_ttime, total_ptime / num_procs, total_ttime / num_procs, num_procs)
 
-            avgs = sorted(avgs.items())
+            avgs = sorted(avgs.items(), key=lambda n: n[1][1], reverse=True)
 
-            out.write('\nProcesses By Name:\n')
+            out.write('\nProcesses By Longest Total Time:\n')
             for itm in avgs:
                 out.write('%s: tot_prs: %s, tot_tot: %s, avg_prs: %s, avg_tot: %s, occurrences: %d\n' %
                     ((itm[0], ) + tuple([time_str(n) for n in itm[1][:-1]]) + (itm[1][-1], ))
